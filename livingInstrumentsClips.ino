@@ -15,10 +15,11 @@
 #define INST      BUBBLES
 
 //configuration for the dimmable high-power LEDS
-#define DIMM_THRESHHOLD   10  //threshhold in precentage of max. sensor value; below that, no dimming of high power LED
+// DIMM_THRESHHOLD should be between 2 (lowest sensitivity) and 10 (Highest sensitivity).
+#define DIMM_THRESHHOLD   10  //threshhold (in % of max. sensor value); below that, no dimming of high power LED (see clips.ino)
 //target range to scale the mapped sensor value to the dimming range for the high power LEDs 
-#define DIMM_MIN_LEVEL    20 //if signal above threshold, thats the min. dimmed setting   - 0   = completly off
-#define DIMM_MAX_LEVEL    120 //if signal above threshold, thats the max. dimmed setting  - 255 = completly on
+#define DIMM_MIN_LEVEL    40 //if signal above threshold, thats the min. dimmed setting   - 0   = completly off
+#define DIMM_MAX_LEVEL    150 //if signal above threshold, thats the max. dimmed setting  - 255 = completly on
 
 //max. value that every sensor output range is mapped to (minimum = 0)
 #define MAX_SENSOR_VALUE  255 
@@ -50,7 +51,7 @@ struct clip *photoClips[CLIP_NUM] = {&clip1, &clip2, &clip3, &clip4, &clip5, &cl
 #elif (INST == TUBES_UNO)
 
 #define CLIP_NUM 6
-//simple UNO board, no status & dimm LEDs, NO USB HIST shield -> collides with pins 10-13
+//simple UNO board, no status & dimm LEDs, NO USB HOST shield -> collides with pins 10-13
 //                photo,led,  min,   max,raw,out,active,status,dimm
 struct clip clip1 = { 0,  8,   511, 1023,  0,  0, true,     0,  0}; //pressure sensor, min/max calibration disabled
 struct clip clip2 = { 1,  9,   511, 1023,  0,  0, true,     0,  0}; //pressure sensor, min/max calibration disabled

@@ -25,14 +25,18 @@ void clips_conf_pins (struct clip* C[]) {
     if (C[i]->statusLedPin) pinMode(C[i]->statusLedPin, OUTPUT);
     if (C[i]->statusLedPin) digitalWrite(C[i]->statusLedPin, LOW);
     if (C[i]->dimLedPin) pinMode(C[i]->dimLedPin, OUTPUT);
-    if (C[i]->dimLedPin) analogWrite(C[i]->dimLedPin, 0);
+    if (C[i]->dimLedPin) analogWrite(C[i]->dimLedPin, 0); // set dimled to 0
+    //if (DEBUG) analogWrite(C[i]->dimLedPin, 125);
   }
 }
 
 void clips_calibrate(struct clip* C[]) {
-  //1000 iterations
+  //2000 iterations for calibration
   for (int i = 0; i < CLIP_NUM; i++) {
-    for (int j = 0; j < 1000 ; j++) {
+    //Enable Status and Dimmable leds to know which clip is calibrating
+    digitalWrite(C[i]->statusLedPin, HIGH);
+    //analogWrite(C[i]->dimLedPin, 255);
+    for (int j = 0; j < 2000 ; j++) {
       C[i]->rawValue = analogRead(C[i]->photoPin);
       if ( C[i]->rawValue > C[i]->maxLight) {
         C[i]->maxLight = C[i]->rawValue;
@@ -51,6 +55,9 @@ void clips_calibrate(struct clip* C[]) {
       Serial.print(' ');
       Serial.println(C[i]->maxLight );
     }
+    //Disable Status and Dimmable leds to know which clip is calibrating
+    digitalWrite(C[i]->statusLedPin, LOW);
+    //analogWrite(C[i]->dimLedPin, 0);
   }
 }
 
@@ -71,6 +78,7 @@ void clips_read(struct clip* C[]) {
     Serial.print(' ');
     if (C[i]->active == true) {
       //set status LEDs
+      // This sets the threshold for turning the dimming LED (in percentage of the max value).
       if (C[i]->output > (C[i]->maxLight / (DIMM_THRESHHOLD))) {
         //set dimm LEDs
         analogWrite(C[i]->dimLedPin, map(C[i]->output, 0, MAX_SENSOR_VALUE, DIMM_MIN_LEVEL, DIMM_MAX_LEVEL));
