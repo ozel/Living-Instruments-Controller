@@ -31,12 +31,12 @@ void clips_conf_pins (struct clip* C[]) {
 }
 
 void clips_calibrate(struct clip* C[]) {
-  //2000 iterations for calibration
+  //4000 iterations for calibration
   for (int i = 0; i < CLIP_NUM; i++) {
     //Enable Status and Dimmable leds to know which clip is calibrating
     digitalWrite(C[i]->statusLedPin, HIGH);
-    //analogWrite(C[i]->dimLedPin, 255);
-    for (int j = 0; j < 2000 ; j++) {
+    analogWrite(C[i]->dimLedPin, HIGH);
+    for (int j = 0; j < 4000 ; j++) {
       C[i]->rawValue = analogRead(C[i]->photoPin);
       if ( C[i]->rawValue > C[i]->maxLight) {
         C[i]->maxLight = C[i]->rawValue;
@@ -57,7 +57,7 @@ void clips_calibrate(struct clip* C[]) {
     }
     //Disable Status and Dimmable leds to know which clip is calibrating
     digitalWrite(C[i]->statusLedPin, LOW);
-    //analogWrite(C[i]->dimLedPin, 0);
+    analogWrite(C[i]->dimLedPin, LOW);
   }
 }
 
@@ -70,15 +70,27 @@ void clips_read(struct clip* C[]) {
       digitalWrite(C[i]->ledPin, HIGH);
       digitalWrite(C[i]->statusLedPin, HIGH);
     }
-    C[i]->rawValue = analogRead(C[i]->photoPin);
-    C[i]->output = map(C[i]->rawValue, C[i]->minLight, C[i]->maxLight, 0, MAX_SENSOR_VALUE);
-    //clip over or undershots, outside of calibration range
-    C[i]->output = constrain(C[i]->output, 0, MAX_SENSOR_VALUE);
+    
+    if (SIMULATE) {
+        C[i]->output = random(0, MAX_SENSOR_VALUE);
+    } else {
+      C[i]->rawValue = analogRead(C[i]->photoPin);
+      C[i]->output = map(C[i]->rawValue, C[i]->minLight, C[i]->maxLight, 0, MAX_SENSOR_VALUE);
+      //clip over or undershots, outside of calibration range
+      C[i]->output = constrain(C[i]->output, 0, MAX_SENSOR_VALUE);
+    }
 
     Serial.print(' ');
     if (C[i]->active == true) {
       //set status LEDs
       // This sets the threshold for turning the dimming LED (in percentage of the max value).
+#if (TUBES)
+    //invert for LED clips (nr. 3 to 6);
+    if (i >= 2) {
+      C[i]->output = MAX_SENSOR_VALUE - C[i]->output;
+    }
+#endif
+
       if (C[i]->output > (C[i]->maxLight / (DIMM_THRESHHOLD))) {
         //set dimm LEDs
         analogWrite(C[i]->dimLedPin, map(C[i]->output, 0, MAX_SENSOR_VALUE, DIMM_MIN_LEVEL, DIMM_MAX_LEVEL));
@@ -86,11 +98,7 @@ void clips_read(struct clip* C[]) {
         analogWrite(C[i]->dimLedPin, 0);
       }
       //report sensor value
-      if (SIMULATE) {
-        Serial.print(random(0, MAX_SENSOR_VALUE));
-      } else {
-        Serial.print(C[i]->output);
-      }
+      Serial.print(C[i]->output);
     } else {
       //switch off LEDs
       digitalWrite(C[i]->ledPin, LOW);
