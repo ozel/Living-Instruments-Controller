@@ -35,7 +35,7 @@ void clips_calibrate(struct clip* C[]) {
   for (int i = 0; i < CLIP_NUM; i++) {
     //Enable Status and Dimmable leds to know which clip is calibrating
     digitalWrite(C[i]->statusLedPin, HIGH);
-    //analogWrite(C[i]->dimLedPin, 255);
+    analogWrite(C[i]->dimLedPin, HIGH);
     for (int j = 0; j < 2000 ; j++) {
       C[i]->rawValue = analogRead(C[i]->photoPin);
       if ( C[i]->rawValue > C[i]->maxLight) {
@@ -57,7 +57,7 @@ void clips_calibrate(struct clip* C[]) {
     }
     //Disable Status and Dimmable leds to know which clip is calibrating
     digitalWrite(C[i]->statusLedPin, LOW);
-    //analogWrite(C[i]->dimLedPin, 0);
+    analogWrite(C[i]->dimLedPin, LOW);
   }
 }
 

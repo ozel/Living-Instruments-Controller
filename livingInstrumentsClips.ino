@@ -5,14 +5,15 @@
 
 //for using with the MAX/MSP patch both following variables must be 0
 #define DEBUG     0 //enable debug prints
-#define SIMULATE  0 //generates random data
+#define SIMULATE  1 //generates random data
+#define CALIB 0     //enable or disable calibration
 
 #define BUBBLES   1 //mega
 #define TUBES     2 //mega (NOT USED RIGHT NOW)
 #define TUBES_UNO 3 //uno
 
 //CHOOSE INSTRUMENT CONTROLLER CONFIGURATION HERE:
-#define INST      BUBBLES
+#define INST      TUBES_UNO //BUBBLES
 
 //configuration for the dimmable high-power LEDS
 // DIMM_THRESHHOLD should be between 2 (lowest sensitivity) and 10 (Highest sensitivity).
@@ -96,9 +97,12 @@ void setup() //define launch routine parameters
   clips_conf_pins(photoClips);
 
   delay(100);
-  //calibrate clip output
-  if (DEBUG) Serial.println("calibrate clips");
-  clips_calibrate(photoClips);
+  
+  if (CALIB) { 
+    //calibrate clip output
+    if (DEBUG) Serial.println("calibrate clips");  
+    clips_calibrate(photoClips);
+  }
 
   if (DEBUG) Serial.println("------------");
 
