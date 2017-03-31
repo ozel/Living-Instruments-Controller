@@ -13,7 +13,7 @@
 #define TUBES_UNO 3 //uno
 
 //CHOOSE INSTRUMENT CONTROLLER CONFIGURATION HERE:
-#define INST      TUBES_UNO //BUBBLES
+#define INST      TUBES //BUBBLES //
 
 //configuration for the dimmable high-power LEDS
 // DIMM_THRESHHOLD should be between 2 (lowest sensitivity) and 10 (Highest sensitivity).
@@ -27,7 +27,7 @@
 
 #if (INST == BUBBLES)
 
-#define CLIP_NUM 6
+#define CLIP_NUM 5
 //                photo,led,  min,max,raw,out, active, status,dimm
 struct clip clip1 = { 8, 26,  1023, 0,  0,  0,  false,     14,  2};
 struct clip clip2 = { 9, 28,  1023, 0,  0,  0,  false,     15,  3};
@@ -97,8 +97,7 @@ void setup() //define launch routine parameters
   clips_conf_pins(photoClips);
 
   delay(100);
-  
-  if (CALIB) { 
+  if (CALIB || !SIMULATE) { 
     //calibrate clip output
     if (DEBUG) Serial.println("calibrate clips");  
     clips_calibrate(photoClips);
