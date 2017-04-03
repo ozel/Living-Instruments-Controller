@@ -1,19 +1,30 @@
 #include <usbh_midi.h>
 #include <usbhub.h>
+#include <EEPROM.h>
 
 #include "clips.h"
 
-//for using with the MAX/MSP patch both following variables must be 0
-#define DEBUG     0 //enable debug prints
-#define SIMULATE  1 //generates random data
-#define CALIB 0     //enable or disable calibration
-
-#define BUBBLES   1 //mega
-#define TUBES     2 //mega (NOT USED RIGHT NOW)
-#define TUBES_UNO 3 //uno
+// available instrument variants
+#define BUBBLES   1 // Arduino Mega
+#define TUBES     2 // Arduino Mega
+#define TUBES_UNO 3 // for testing with an Arduino UNO, no USB MIDI keyboard support with this one 
 
 //CHOOSE INSTRUMENT CONTROLLER CONFIGURATION HERE:
-#define INST      TUBES //BUBBLES //
+#define INST      BUBBLES //TUBES
+
+// for using this with the MAX/MSP patch, all four variables below here must be set to 0!
+#define DEBUG     0 //enable debug prints
+#define SIMULATE  0 //generates random data
+
+#define CLEAR_EEPROM 0          // in case of a new Arduino board, clear the EEPROM. this allows proper storage of calibration data
+#define CALIB_AFTER_RESET 0     // enable or disable calibration procedure directly after reset
+
+// define number of iterations for calibration procedure
+#if (SIMULATE)
+  #define CALIB_ITERATIONS  5   // only used in simulation mode, should be bigger than 2...
+#else
+  #define CALIB_ITERATIONS  3000
+#endif
 
 //configuration for the dimmable high-power LEDS
 // DIMM_THRESHHOLD should be between 2 (lowest sensitivity) and 10 (Highest sensitivity).
@@ -23,30 +34,32 @@
 #define DIMM_MAX_LEVEL    150 //if signal above threshold, thats the max. dimmed setting  - 255 = completly on
 
 //max. value that every sensor output range is mapped to (minimum = 0)
-#define MAX_SENSOR_VALUE  255 
+#define MAX_SENSOR_VALUE  255
+
+// don't change anything below here, unless you know what you are doing ;-)
 
 #if (INST == BUBBLES)
 
 #define CLIP_NUM 5
 //                photo,led,  min,max,raw,out, active, status,dimm
-struct clip clip1 = { 8, 26,  1023, 0,  0,  0,  false,     14,  2};
-struct clip clip2 = { 9, 28,  1023, 0,  0,  0,  false,     15,  3};
-struct clip clip3 = {10, 30,  1023, 0,  0,  0,  false,     16,  4};
-struct clip clip4 = {11, 32,  1023, 0,  0,  0,  false,     17,  5};
-struct clip clip5 = {12, 34,  1023, 0,  0,  0,  false,     18,  6};
-struct clip clip6 = {13, 36,  1023, 0,  0,  0,  false,     19,  7}; //TODO: pin 7 might interfere with the USB host shield
-struct clip *photoClips[CLIP_NUM] = {&clip1, &clip2, &clip3, &clip4, &clip5,&clip6};
+struct clip clip1 = { 8, 26,  1023, 0,  0,  0,  true,     14,  2};
+struct clip clip2 = { 9, 28,  1023, 0,  0,  0,  true,     15,  3};
+struct clip clip3 = {10, 30,  1023, 0,  0,  0,  true,     16,  4};
+struct clip clip4 = {11, 32,  1023, 0,  0,  0,  true,     17,  5};
+struct clip clip5 = {12, 34,  1023, 0,  0,  0,  true,     18,  6};
+// struct clip clip6 = {13, 36,  1023, 0,  0,  0,  false,     19,  7}; //TODO: pin 7 might interfere with the USB host shield
+struct clip *photoClips[CLIP_NUM] = {&clip1, &clip2, &clip3, &clip4, &clip5};
 
 #elif (INST == TUBES)
 
 #define CLIP_NUM 6
 //                photo,led,  min,max,  raw,out, active, status,dimm
-struct clip clip1 = { 8, 26,  511, 1023,  0,  0,  false,     14,  2}; //pressure sensor, min/max calibration disabled
-struct clip clip2 = { 9, 28,  511, 1023,  0,  0,  false,     15,  3}; //pressure sensor, min/max calibration disabled
-struct clip clip3 = {10, 30,  1023,   0,  0,  0,  false,     16,  4};
-struct clip clip4 = {11, 32,  1023,   0,  0,  0,  false,     17,  5};
-struct clip clip5 = {12, 34,  1023,   0,  0,  0,  false,     18,  6};
-struct clip clip6 = {13, 36,  1023,   0,  0,  0,  false,     19,  7};
+struct clip clip1 = { 8, 26,  511, 1023,  0,  0,  true,     14,  2}; //pressure sensor, min/max calibration disabled
+struct clip clip2 = { 9, 28,  511, 1023,  0,  0,  true,     15,  3}; //pressure sensor, min/max calibration disabled
+struct clip clip3 = {10, 30,  1023,   0,  0,  0,  true,     16,  4};
+struct clip clip4 = {11, 32,  1023,   0,  0,  0,  true,     17,  5};
+struct clip clip5 = {12, 34,  1023,   0,  0,  0,  true,     18,  6};
+struct clip clip6 = {13, 36,  1023,   0,  0,  0,  true,     19,  7}; //TODO: pin 7 might interfere with the USB host shield
 struct clip *photoClips[CLIP_NUM] = {&clip1, &clip2, &clip3, &clip4, &clip5, &clip6};
 
 #elif (INST == TUBES_UNO)
@@ -90,16 +103,26 @@ void setup() //define launch routine parameters
     delay( 200 );
   }
 
+  randomSeed(analogRead(5));
+  
   if (DEBUG) Serial.println("Living Instrument says Hello World!");
+  
+  int testread = 0;
+  EEPROM.get(0, testread);
+  if(testread == -1 || CLEAR_EEPROM){
+    if (DEBUG) Serial.println("clearing EEPROM");
+    for (int i = 0 ; i < 6*2*sizeof(int) ; i++) {
+      EEPROM.write(i, 0);
+    }
+  } 
 
   //configure clip pins
   if (DEBUG) Serial.println("configure clip pins");
   clips_conf_pins(photoClips);
-
+  
   delay(100);
-  if (CALIB || !SIMULATE) { 
+  if (CALIB_AFTER_RESET) { 
     //calibrate clip output
-    if (DEBUG) Serial.println("calibrate clips");  
     clips_calibrate(photoClips);
   }
 
@@ -124,6 +147,10 @@ void loop() //define loop parameters
   }
 
   clips_read(photoClips);
+  //delay(5);
+  // TODO: usbh_midi example have here a special delay that always waits for 1 ms maximum
+  //       we may need that here, too
+  
 }
 
 // Poll USB MIDI Controler and send to serial
@@ -140,19 +167,22 @@ void MIDI_poll()
     vid = Midi.vid;
     pid = Midi.pid;
   }
-  rcvd = Midi.RecvData(  bufMidi);
-  if (rcvd > 0 ) {
+  //rcvd = Midi.RecvData(  bufMidi);
+  //if (rcvd > 0 ) {
+  while((rcvd = Midi.RecvData(  bufMidi)) > 0) {
+  //if(Midi.RecvData( &rcvd,  bufMidi) == 0){
     sprintf(buf, "%08X: ", millis());
     if (DEBUG) Serial.print(buf);
+    if (DEBUG) Serial.print(' ');
     if (DEBUG) Serial.print(rcvd);
     if (DEBUG) Serial.print(':');
     for (int i = 0; i < 3; i++) {
       sprintf(buf, " %02X", bufMidi[i]);
       if (DEBUG) Serial.print(buf);
     }
-    if (DEBUG) Serial.println();
     if ( bufMidi[0] == 0x90) {
       //note on
+      if (DEBUG) Serial.print(" note on");
       switch (bufMidi[1]) {
         //lower octave
         case 0x30:
@@ -196,9 +226,14 @@ void MIDI_poll()
           photoClips[5]->active = !photoClips[5]->active;
           break;
 #endif
+        case 0x54: // two Cs up from the toggle mute's base C
+          //calibrate clip output
+          clips_calibrate(photoClips);
+          break;
       }
     } else if ( bufMidi[0] == 0x80) {
       //note off
+      if (DEBUG) Serial.print(" note off");
       switch (bufMidi[1]) {
         //lower octave
         case 0x30:
@@ -223,5 +258,6 @@ void MIDI_poll()
 #endif
       }
     }
+    if (DEBUG) Serial.println();
   }
 }

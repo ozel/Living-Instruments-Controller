@@ -1,4 +1,5 @@
 #include "clips.h"
+#include <EEPROM.h>
 
 //void clips_init (struct clip* C[]) {
 //  for (int i = 0; i < CLIP_NUM; i++) {
@@ -12,13 +13,29 @@
 //  }
 //}
 
+int read_sensor (int pin) {
+    if (SIMULATE == 1) {
+        return random(0, MAX_SENSOR_VALUE+1);
+    } else {
+        return analogRead(pin);
+    }
+}
+
 void clips_conf_pins (struct clip* C[]) {
+  int j = 0;
   for (int i = 0; i < CLIP_NUM; i++) {
+    EEPROM.get(  j  *sizeof(int),C[i]->minLight);
+    EEPROM.get((j+1)*sizeof(int),C[i]->maxLight);
+    j+=2;
     if (DEBUG) {
-      Serial.print("pins ");
+      Serial.print("pins: ");
       Serial.print(C[i]->ledPin);
       Serial.print(' ');
-      Serial.println(C[i]->photoPin);
+      Serial.print(C[i]->photoPin);
+      Serial.print(" calib: ");
+      Serial.print(C[i]->minLight);
+      Serial.print(' ');
+      Serial.println(C[i]->maxLight);
     }
     pinMode(C[i]->ledPin, OUTPUT);
     digitalWrite(C[i]->ledPin, HIGH);
@@ -31,18 +48,36 @@ void clips_conf_pins (struct clip* C[]) {
 }
 
 void clips_calibrate(struct clip* C[]) {
-  //3000 iterations for calibration
-  for (int i = 0; i < CLIP_NUM; i++) {
+  if (DEBUG) Serial.println("calibrate clips");  
+  //several iterations for calibration
+  #if (INST == TUBES)
+    int offset = 2; //skip preassure sensors
+  #else
+    int offset = 0;
+  #endif
+
+  for (int i = offset; i < CLIP_NUM; i++) {
     //Enable Status and Dimmable leds to know which clip is calibrating
     digitalWrite(C[i]->statusLedPin, HIGH);
     analogWrite(C[i]->dimLedPin, HIGH);
-    for (int j = 0; j < 3000 ; j++) {
-      C[i]->rawValue = analogRead(C[i]->photoPin);
+    // reset min/max.
+    C[i]->minLight = 1023;
+    C[i]->maxLight = 0;
+    for (int j = 0; j < CALIB_ITERATIONS ; j++) {
+      C[i]->rawValue = read_sensor(C[i]->photoPin);
       if ( C[i]->rawValue > C[i]->maxLight) {
         C[i]->maxLight = C[i]->rawValue;
+        if (DEBUG) {
+          Serial.print(C[i]->rawValue);
+          Serial.println(" new max");
+        }
       }
       if (C[i]->rawValue < C[i]->minLight) {
         C[i]->minLight = C[i]->rawValue;
+        if (DEBUG) { 
+          Serial.print(C[i]->rawValue);
+          Serial.println(" new min");
+        }
       }
       delay(5);
       if (DEBUG && j % 100 == 0) Serial.print('.');
@@ -59,6 +94,14 @@ void clips_calibrate(struct clip* C[]) {
     digitalWrite(C[i]->statusLedPin, LOW);
     analogWrite(C[i]->dimLedPin, LOW);
   }
+  if (DEBUG) Serial.print("saving calibration...");
+  int idx = 0;
+  for (int i = 0; i < CLIP_NUM; i++) {
+    EEPROM.put(  idx  *sizeof(int),C[i]->minLight);
+    EEPROM.put((idx+1)*sizeof(int),C[i]->maxLight);
+    idx+=2;
+  }
+  if (DEBUG) Serial.println("done.");
 }
 
 void clips_read(struct clip* C[]) {
@@ -71,24 +114,25 @@ void clips_read(struct clip* C[]) {
       digitalWrite(C[i]->statusLedPin, HIGH);
     }
     
-    if (SIMULATE) {
-        C[i]->output = random(0, MAX_SENSOR_VALUE);
-    } else {
-      C[i]->rawValue = analogRead(C[i]->photoPin);
+//    if (SIMULATE) {
+//        C[i]->output = random(0, MAX_SENSOR_VALUE);
+//    } else {
+      C[i]->rawValue = read_sensor(C[i]->photoPin);
       C[i]->output = map(C[i]->rawValue, C[i]->minLight, C[i]->maxLight, 0, MAX_SENSOR_VALUE);
       //clip over or undershots, outside of calibration range
       C[i]->output = constrain(C[i]->output, 0, MAX_SENSOR_VALUE);
-    }
+//    }
 
     Serial.print(' ');
     if (C[i]->active == true) {
       //set status LEDs
       // This sets the threshold for turning the dimming LED (in percentage of the max value).
-#if (TUBES)
-    //invert for LED clips (nr. 3 to 6);
-    if (i >= 2) {
+
+#if (INST == TUBES)
+      //invert for LED clips (nr. 3 to 6);
+      if (i >= 2) {
       C[i]->output = MAX_SENSOR_VALUE - C[i]->output;
-    }
+      }
 #endif
 
       if (C[i]->output > (C[i]->maxLight / (DIMM_THRESHHOLD))) {
