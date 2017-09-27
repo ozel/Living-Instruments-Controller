@@ -10,11 +10,12 @@
 #define TUBES_UNO 3 // for testing with an Arduino UNO, no USB MIDI keyboard support with this one 
 
 //CHOOSE INSTRUMENT CONTROLLER CONFIGURATION HERE:
-#define INST      BUBBLES //TUBES
+#define INST      TUBES //BUBBLES //TUBES
 
+#define DEBUG     1 //enable few debug prints, mostly clibration related
 // for using this with the MAX/MSP patch, all four variables below here must be set to 0!
-#define DEBUG     0 //enable debug prints
-#define SIMULATE  0 //generates random data
+#define DEBUG_MIDI  0 //print raw MIDI commands   
+#define SIMULATE    0 //generates random data
 
 #define CLEAR_EEPROM 0          // in case of a new Arduino board, clear the EEPROM. this allows proper storage of calibration data
 #define CALIB_AFTER_RESET 0     // enable or disable calibration procedure directly after reset
@@ -65,14 +66,14 @@ struct clip *photoClips[CLIP_NUM] = {&clip1, &clip2, &clip3, &clip4, &clip5, &cl
 #elif (INST == TUBES_UNO)
 
 #define CLIP_NUM 6
-//simple UNO board, no status & dimm LEDs, NO USB HOST shield -> collides with pins 10-13
+//simple UNO board, no status & dimm LEDs, NO USB HOST shield -> collides with pins 7,8,9,10
 //                photo,led,  min,   max,raw,out,active,status,dimm
-struct clip clip1 = { 0,  8,   511, 1023,  0,  0, true,     0,  0}; //pressure sensor, min/max calibration disabled
-struct clip clip2 = { 1,  9,   511, 1023,  0,  0, true,     0,  0}; //pressure sensor, min/max calibration disabled
-struct clip clip3 = { 2, 10,  1023,    0,  0,  0, true,     0,  0};
-struct clip clip4 = { 3, 11,  1023,    0,  0,  0, true,     0,  0};
-struct clip clip5 = { 4, 12,  1023,    0,  0,  0, true,     0,  0};
-struct clip clip6 = { 5, 13,  1023,    0,  0,  0, true,     0,  0};
+struct clip clip1 = { 0, 5,  1023,    0,  0,  0, false,     5,  5}; //pressure sensor, min/max calibration disabled
+struct clip clip2 = { 1, 5,  1023,    0,  0,  0, false,     5,  5}; //pressure sensor, min/max calibration disabled
+struct clip clip3 = { 2, 5,  1023,    0,  0,  0, false,     5,  5};
+struct clip clip4 = { 3, 5,  1023,    0,  0,  0, false,     5,  5};
+struct clip clip5 = { 4, 5,  1023,    0,  0,  0, false,     5,  5};
+struct clip clip6 = { 5, 5,  1023,    0,  0,  0, false,     5,  5};
 struct clip *photoClips[CLIP_NUM] = {&clip1, &clip2, &clip3, &clip4, &clip5, &clip6};
 
 #endif
@@ -89,12 +90,12 @@ uint16_t pid, vid;
 void setup() //define launch routine parameters
 
 {
-  Serial.begin(9600);  //Begin serial communcation
+  Serial.begin(115200);//19200);  //Begin serial communcation
 
 //  pinMode(debug_led, OUTPUT);
 //  digitalWrite(debug_led, LOW);
   
-  if(INST != TUBES_UNO) {
+  if(true /*INST != TUBES_UNO*/) {
     //setup USB host shield
     vid = pid = 0;
     if (Usb.Init() == -1) {
@@ -138,22 +139,18 @@ void setup() //define launch routine parameters
 }
 
 void loop() //define loop parameters
-{
-
+{ 
   Usb.Task();
+  uint32_t t1 = (uint32_t)micros();
   if ( Usb.getUsbTaskState() == USB_STATE_RUNNING )
   {
     MIDI_poll();
   }
-
   clips_read(photoClips);
-  //delay(5);
-  // TODO: usbh_midi example have here a special delay that always waits for 1 ms maximum
-  //       we may need that here, too
-  
+  doDelay(t1, (uint32_t)micros(), 1000); //wait at least 1 ms here
 }
 
-// Poll USB MIDI Controler and send to serial
+// Poll USB MIDI Controler and send DEBUG info to serial
 // activate clips based on note press
 void MIDI_poll()
 {
@@ -163,7 +160,7 @@ void MIDI_poll()
 
   if (Midi.vid != vid || Midi.pid != pid) {
     sprintf(buf, "VID:%04X, PID:%04X", Midi.vid, Midi.pid);
-    if (DEBUG) Serial.println(buf);
+    if (DEBUG_MIDI) Serial.println(buf);
     vid = Midi.vid;
     pid = Midi.pid;
   }
@@ -172,17 +169,17 @@ void MIDI_poll()
   while((rcvd = Midi.RecvData(  bufMidi)) > 0) {
   //if(Midi.RecvData( &rcvd,  bufMidi) == 0){
     sprintf(buf, "%08X: ", millis());
-    if (DEBUG) Serial.print(buf);
-    if (DEBUG) Serial.print(' ');
-    if (DEBUG) Serial.print(rcvd);
-    if (DEBUG) Serial.print(':');
-    for (int i = 0; i < 3; i++) {
+    if (DEBUG_MIDI) Serial.print(buf);
+    if (DEBUG_MIDI) Serial.print(' ');
+    if (DEBUG_MIDI) Serial.print(rcvd);
+    if (DEBUG_MIDI) Serial.print(':');
+    for (int i = 0; i < rcvd; i++) {
       sprintf(buf, " %02X", bufMidi[i]);
-      if (DEBUG) Serial.print(buf);
+      if (DEBUG_MIDI) Serial.print(buf);
     }
     if ( bufMidi[0] == 0x90) {
       //note on
-      if (DEBUG) Serial.print(" note on");
+      if (DEBUG_MIDI) Serial.print(" note on");
       switch (bufMidi[1]) {
         //lower octave
         case 0x30:
@@ -233,7 +230,7 @@ void MIDI_poll()
       }
     } else if ( bufMidi[0] == 0x80) {
       //note off
-      if (DEBUG) Serial.print(" note off");
+      if (DEBUG_MIDI) Serial.print(" note off");
       switch (bufMidi[1]) {
         //lower octave
         case 0x30:
@@ -258,6 +255,22 @@ void MIDI_poll()
 #endif
       }
     }
-    if (DEBUG) Serial.println();
+    if (DEBUG_MIDI) Serial.println();
+  }
+}
+
+// Delay time (max 16383 us)
+void doDelay(uint32_t t1, uint32_t t2, uint32_t delayTime)
+{
+  uint32_t t3;
+
+  if ( t1 > t2 ) {
+    t3 = (0xFFFFFFFF - t1 + t2);
+  } else {
+    t3 = t2 - t1;
+  }
+
+  if ( t3 < delayTime ) {
+    delayMicroseconds(delayTime - t3);
   }
 }
