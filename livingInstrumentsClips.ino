@@ -1,6 +1,7 @@
 #include <usbh_midi.h>
 #include <usbhub.h>
 #include <EEPROM.h>
+#include <MIDI.h>
 
 #include "clips.h"
 
@@ -16,6 +17,7 @@
 // for using this with the MAX/MSP patch, all four variables below here must be set to 0!
 #define DEBUG_MIDI  0 //print raw MIDI commands   
 #define SIMULATE    0 //generates random data
+#define OUTPUT_MIDI 1
 
 #define CLEAR_EEPROM 0          // in case of a new Arduino board, clear the EEPROM. this allows proper storage of calibration data
 #define CALIB_AFTER_RESET 0     // enable or disable calibration procedure directly after reset
@@ -34,12 +36,18 @@
 #define DIMM_MIN_LEVEL    40 //if signal above threshold, thats the min. dimmed setting   - 0   = completly off
 #define DIMM_MAX_LEVEL    150 //if signal above threshold, thats the max. dimmed setting  - 255 = completly on
 
-//max. value that every sensor output range is mapped to (minimum = 0)
-#define MAX_SENSOR_VALUE  255
 
 // don't change anything below here, unless you know what you are doing ;-)
 
+#if (OUTPUT_MIDI == 1)
+//Serial3 requires pin14 for output/TX
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial3, MIDI);
+#endif
+
 #if (INST == BUBBLES)
+
+//max. value that every sensor output range is mapped to (minimum = 0)
+#define MAX_SENSOR_VALUE  255 
 
 #define CLIP_NUM 5
 //                photo,led,  min,max,raw,out, active, status,dimm
@@ -53,14 +61,17 @@ struct clip *photoClips[CLIP_NUM] = {&clip1, &clip2, &clip3, &clip4, &clip5};
 
 #elif (INST == TUBES)
 
+//max. value that every sensor output range is mapped to (minimum = 0)
+#define MAX_SENSOR_VALUE  127 //MIDI range is 7bit only
+
 #define CLIP_NUM 6
 //                photo,led,  min,max,  raw,out, active, status,dimm
-struct clip clip1 = { 8, 26,  511, 1023,  0,  0,  true,     14,  2}; //pressure sensor, min/max calibration disabled
-struct clip clip2 = { 9, 28,  511, 1023,  0,  0,  true,     15,  3}; //pressure sensor, min/max calibration disabled
-struct clip clip3 = {10, 30,  1023,   0,  0,  0,  true,     16,  4};
-struct clip clip4 = {11, 32,  1023,   0,  0,  0,  true,     17,  5};
-struct clip clip5 = {12, 34,  1023,   0,  0,  0,  true,     18,  6};
-struct clip clip6 = {13, 36,  1023,   0,  0,  0,  true,     19,  7}; //TODO: pin 7 might interfere with the USB host shield
+struct clip clip1 = { 8, 26,  511, 1023,  0,  0,  false,     44,  2}; //pin14 changed to midi out! pressure sensor, min/max calibration disabled
+struct clip clip2 = { 9, 28,  511, 1023,  0,  0,  false,     45,  3}; //pressure sensor, min/max calibration disabled, pins 44/55 just dummies!
+struct clip clip3 = {10, 30,  1023,   0,  0,  0,  false,     16,  4}; //status15 LED is broken!
+struct clip clip4 = {11, 32,  1023,   0,  0,  0,  false,     16,  5}; //was pin14, not used with new TUBES
+struct clip clip5 = {12, 34,  1023,   0,  0,  0,  false,     19,  6};
+struct clip clip6 = {13, 36,  1023,   0,  0,  0,  false,     19,  7}; //TODO: pin 7 might interfere with the USB host shield
 struct clip *photoClips[CLIP_NUM] = {&clip1, &clip2, &clip3, &clip4, &clip5, &clip6};
 
 #elif (INST == TUBES_UNO)
@@ -87,11 +98,19 @@ uint16_t pid, vid;
 //int debug_led = 13;
 
 
+
 void setup() //define launch routine parameters
 
 {
   Serial.begin(115200);//19200);  //Begin serial communcation
-
+  if(OUTPUT_MIDI){
+    MIDI.begin();
+    MIDI.sendControlChange(123,0,1); //all notes off
+    MIDI.sendNoteOn(100,127,1);
+    delay(1000);
+    MIDI.sendNoteOff(100,0,1);
+  }
+  
 //  pinMode(debug_led, OUTPUT);
 //  digitalWrite(debug_led, LOW);
   

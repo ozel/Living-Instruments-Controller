@@ -1,5 +1,13 @@
 #include "clips.h"
 #include <EEPROM.h>
+#include <MIDI.h>
+#include <AnalogSmooth.h>
+
+AnalogSmooth avgC2 = AnalogSmooth(30);
+AnalogSmooth avgC3 = AnalogSmooth(15);
+AnalogSmooth avgC4 = AnalogSmooth(30);
+AnalogSmooth avgC5 = AnalogSmooth(15);
+
 
 //void clips_init (struct clip* C[]) {
 //  for (int i = 0; i < CLIP_NUM; i++) {
@@ -12,6 +20,11 @@
 //    C[i]->active = false;
 //  }
 //}
+
+int lastC2 = 0;
+int lastC3 = 0;
+int lastC4 = 0;
+int lastC5 = 0;
 
 int read_sensor (int pin) {
   if (SIMULATE == 1) {
@@ -50,11 +63,11 @@ void clips_conf_pins (struct clip* C[]) {
 void clips_calibrate(struct clip* C[]) {
   if (DEBUG) Serial.println("calibrate clips");
   //several iterations for calibration
-#if (INST == TUBES)
-  int offset = 2; //skip preassure sensors
-#else
+  //#if (INST == TUBES)
+  //  int offset = 2; //skip preassure sensors
+  //#else
   int offset = 0;
-#endif
+  //#endif
 
   for (int i = offset; i < CLIP_NUM; i++) {
     //Enable Status and Dimmable leds to know which clip is calibrating
@@ -116,6 +129,16 @@ void clips_read(struct clip* C[]) {
       digitalWrite(C[i]->ledPin, HIGH);
       digitalWrite(C[i]->statusLedPin, HIGH);
     }
+#if (INST == TUBES)
+    if (C[2]->active || C[3]->active) {
+      digitalWrite(C[2]->statusLedPin, HIGH);
+      digitalWrite(C[3]->statusLedPin, HIGH);
+    }
+    else if (C[4]->active || C[5]->active) {
+      digitalWrite(C[4]->statusLedPin, HIGH);
+      digitalWrite(C[5]->statusLedPin, HIGH);
+    }
+#endif
 
     C[i]->rawValue = read_sensor(C[i]->photoPin);
     C[i]->output = map(C[i]->rawValue, C[i]->minLight, C[i]->maxLight, 0, MAX_SENSOR_VALUE);
@@ -127,13 +150,13 @@ void clips_read(struct clip* C[]) {
       if (C[i]->output > 0) {
         newData++;
       }
-      
-//#if (INST == TUBES)
-//      //invert for LED clips (nr. 3 to 6);
-//      if (i >= 2) {
-//        C[i]->output = MAX_SENSOR_VALUE - C[i]->output;
-//      }
-//#endif
+
+      //#if (INST == TUBES)
+      //      //invert for LED clips (nr. 3 to 6);
+      //      if (i >= 2) {
+      //        C[i]->output = MAX_SENSOR_VALUE - C[i]->output;
+      //      }
+      //#endif
 
       //set status LEDs
       // This sets the threshold for turning the dimming LED (in percentage of the max value).
@@ -162,5 +185,58 @@ void clips_read(struct clip* C[]) {
       Serial.print(' ');
     }
     Serial.println();
+
+    if (OUTPUT_MIDI) {
+
+      //clips 0,2,3
+      
+      if (C[2]->output <= (avgC2.smooth(C[2]->output) - 3)) { //|| C[2]->output > (lastC2 + 3) ){
+        //dark fluid = gate on
+        MIDI.sendRealTime(midi::Start);
+      }
+
+      if (C[2]->output >= (avgC2.smooth(C[2]->output) + 3)) { //|| C[3]->output > (lastC3 + 3) ){
+        //transparent = gate off
+        MIDI.sendRealTime(midi::Stop);
+      }
+
+      if (C[3]->output <= (avgC3.smooth(C[3]->output) - 7)) { //|| C[2]->output > (lastC2 + 3) ){
+        MIDI.sendRealTime(midi::SystemReset);
+      }
+
+      if (C[3]->output >= (avgC3.smooth(C[3]->output) + 7)) { //|| C[3]->output > (lastC3 + 3) ){
+        MIDI.sendRealTime(midi::SystemReset);
+      }
+
+      MIDI.sendAfterTouch(C[0]->output, 1);
+
+      //clips 1,4,5
+      if (C[4]->output <= (avgC4.smooth(C[4]->output) - 3)) {
+        MIDI.sendNoteOn(48, 127 - C[1]->output, 1);
+      }
+
+      if (C[4]->output >= (avgC4.smooth(C[4]->output) + 3) || !C[4]->active) {
+        MIDI.sendNoteOff(48, C[1]->output, 1);
+      }
+
+      if (C[5]->output <= (avgC5.smooth(C[5]->output) - 7)) {
+        MIDI.sendNoteOn(55, 127 - C[1]->output, 1);
+      }
+
+      if (C[5]->output >= (avgC5.smooth(C[5]->output) + 7) || !C[5]->active) {
+        MIDI.sendNoteOff(55, C[1]->output, 1);
+      }
+
+      lastC2 = C[2]->output;
+      lastC3 = C[3]->output;
+      lastC4 = C[4]->output;
+      lastC5 = C[5]->output;
+
+      MIDI.sendControlChange(1, C[1]->output, 1); //CC1 = mod wheeel
+      //MIDI.sendRealTime(midi::SystemReset);
+      //MIDI.sendRealTime(midi::Start);
+      //MIDI.sendRealTime(midi::Stop);
+      //MIDI.sendRealTime(midi::Clock);
+    }
   }
 }

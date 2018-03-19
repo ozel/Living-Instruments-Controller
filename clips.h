@@ -7,7 +7,7 @@ struct clip {
   int minLight;
   int maxLight;
   int rawValue;
-  int output;   //rawValue calibrated between max/min range
+  int output;    //rawValue calibrated between max/min range
   bool active;
   // follwing stuff is only for visuals:
   int statusLedPin;  //high power 1 watt LED
